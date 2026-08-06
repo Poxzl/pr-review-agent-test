@@ -1,0 +1,52 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install script dependencies
+        run: npm install @octokit/rest node-fetch dotenv --no-audit --no-fund
+
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama server
+        run: |
+          nohup ollama serve > ollama.log 2>&1 &
+          # wait for it to be ready before pulling/using it
+          for i in {1..30}; do
+            if curl -s http://localhost:11434 > /dev/null; then
+              echo "Ollama is up"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Pull model
+        run: ollama pull qwen2.5-coder:1.5b
+
+      - name: Run PR review
+        run: node review-pr.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          OLLAMA_URL: http://localhost:11434/api/chat
+          OLLAMA_MODEL: qwen2.5-coder:1.5b
